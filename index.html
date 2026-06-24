@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>fosterdy - 実用型行管理システム</title>
+    <style>
+        /* 共通の規律（基本スタイル） */
+        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 480px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); min-height: 550px; position: relative; }
+        h1 { font-size: 20px; margin-top: 0; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .hidden { display: none !important; }
+        
+        /* ボタン・入力フォーム共通 */
+        input, textarea { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        button { cursor: pointer; font-weight: bold; border-radius: 6px; }
+        .btn-main { background: #3498db; color: white; border: none; padding: 10px 15px; width: 100%; font-size: 15px; }
+        .btn-back { background: #eee; border: none; padding: 8px 12px; font-size: 13px; margin-bottom: 15px; }
+        .add-box { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px dashed #ccc; }
+
+        /* ホーム画面（ファイル一覧） */
+        .file-item { display: flex; align-items: center; justify-content: space-between; padding: 15px; border-bottom: 1px solid #eee; }
+        .file-left { display: flex; align-items: center; cursor: pointer; flex-grow: 1; }
+        .status-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #ccc; margin-right: 12px; }
+        .status-dot.active { background-color: #2ecc71; border-color: #2ecc71; } /* 未完了タスクありで🟢 */
+        .file-title { font-size: 16px; font-weight: bold; }
+        .delete-trigger { background: #333; color: white; width: 24px; height: 24px; border-radius: 50%; border: none; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+
+        /* ファイル内部（タスク一覧） */
+        .task-list-title { font-size: 18px; color: #555; margin-bottom: 15px; font-weight: bold; }
+        .task-item { background: #fafafa; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3498db; display: flex; justify-content: space-between; align-items: flex-start; }
+        .task-content { flex-grow: 1; padding-right: 15px; }
+        .task-main { font-size: 16px; font-weight: bold; margin: 0 0 5px 0; }
+        .task-memo { font-size: 13px; color: #777; margin: 0 0 5px 0; }
+        .task-comment { font-size: 12px; color: #997700; background: #fffbe6; padding: 6px; border-radius: 4px; margin: 5px 0 0 0; border: 1px solid #ffe58f; }
+        .task-date { font-size: 11px; background: #e8f4fd; color: #1d9bf0; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 5px; }
+        .task-date.over { background: #fff1f0; color: #ff4d4f; font-weight: bold; }
+        .check-btn { background: white; border: 2px solid #3498db; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+
+        /* 安全弁（アクションシート） */
+        .overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 99; }
+        .action-sheet { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 20px; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 10px rgba(0,0,0,0.2); text-align: center; z-index: 100; max-width: 480px; margin: 0 auto; }
+        .action-sheet button.danger { background: #ff3b30; color: white; border: none; padding: 12px; width: 100%; font-size: 16px; }
+        .action-sheet button.cancel { background: #eee; border: none; padding: 12px; width: 100%; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    
+    <div id="view-home">
+        <h1>ファイル管理</h1>
+        
+        <div class="add-box">
+            <input type="text" id="new-file-title" placeholder="新しいファイル名（例：歌、陸上）">
+            <button class="btn-main" onclick="createNewFile()">ファイルを新規作成</button>
+        </div>
+
+        <div id="file-list"></div>
+    </div>
+
+    <div id="view-detail" class="hidden">
+        <button class="btn-back" onclick="backToHome()">＜ 戻る</button>
+        <div id="task-list-title" class="task-list-title"></div>
+        
+        <div class="add-box">
+            <input type="text" id="new-task-title" placeholder="やること（タイトル）">
+            <input type="text" id="new-task-memo" placeholder="一言メモ">
+            <textarea id="new-task-comment" placeholder="詳細コメント" rows="2"></textarea>
+            <label style="font-size: 12px; font-weight: bold; color: #666;">期限設定 (任意):</label>
+            <input type="datetime-local" id="new-task-date">
+            <button class="btn-main" onclick="createNewTask()">タスクを要素に追加</button>
+        </div>
+
+        <div id="task-list"></div>
+    </div>
+
+</div>
+
+<div class="overlay" id="overlay" onclick="closeDeleteSheet()"></div>
+<div class="action-sheet" id="actionSheet">
+    <p style="margin-bottom: 15px; font-weight: bold;">このファイルを完全に削除しますか？</p>
+    <button class="danger" id="confirmDeleteBtn">削除</button>
+    <button class="cancel" onclick="closeDeleteSheet()">キャンセル</button>
+</div>
+
+<script>
+// 記憶システム
+let appData = JSON.parse(localStorage.getItem('fosterdy_tasks')) || [];
+let targetFileIdToDelete = null;
+let currentOpenFileId = null;
+
+// データ同期
+function saveToStorage() {
+    localStorage.setItem('fosterdy_tasks', JSON.stringify(appData));
+}
+
+// 【ファイル操作】新規作成
+function createNewFile() {
+    const input = document.getElementById('new-file-title');
+    const title = input.value.trim();
+    if (!title) return alert('ファイル名を入力してください');
+
+    const newFile = {
+        id: "file_" + Date.now(),
+        title: title,
+        tasks: []
+    };
+
+    appData.push(newFile);
+    saveToStorage();
+    input.value = '';
+    renderHome();
+}
+
+// 【ファイル操作】一覧表示
+function renderHome() {
+    const container = document.getElementById('file-list');
+    container.innerHTML = '';
+
+    if (appData.length === 0) {
+        container.innerHTML = '<p style="color:#999; text-align:center; margin-top:20px;">ファイルがありません。上のフォームから作成してください。</p>';
+        return;
+    }
+
+    appData.forEach(file => {
+        const hasActive = file.tasks.some(t => !t.isCompleted);
+        const dotClass = hasActive ? 'status-dot active' : 'status-dot';
+
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        item.innerHTML = `
+            <div class="file-left" onclick="openFile('${file.id}')">
+                <span class="${dotClass}"></span>
+                <span class="file-title">${file.title}</span>
+            </div>
+            <button class="delete-trigger" onclick="triggerDeleteSheet('${file.id}')">●</button>
+        `;
+        container.appendChild(item);
+    });
+}
+
+// 【ファイル操作】削除防壁
+function triggerDeleteSheet(fileId) {
+    targetFileIdToDelete = fileId;
+    document.getElementById('overlay').style.display = 'block';
+    document.getElementById('actionSheet').style.display = 'block';
+}
+function closeDeleteSheet() {
+    targetFileIdToDelete = null;
+    document.getElementById('overlay').style.display = 'none';
+    document.getElementById('actionSheet').style.display = 'none';
+}
+document.getElementById('confirmDeleteBtn').addEventListener('click', () => {
+    if (targetFileIdToDelete) {
+        appData = appData.filter(f => f.id !== targetFileIdToDelete);
+        saveToStorage();
+        renderHome();
+        closeDeleteSheet();
+    }
+});
+
+// 【ファイル内部】開く
+function openFile(fileId) {
+    currentOpenFileId = fileId;
+    const file = appData.find(f => f.id === fileId);
+    if (!file) return;
+
+    document.getElementById('view-home').classList.add('hidden');
+    document.getElementById('view-detail').classList.remove('hidden');
+    document.getElementById('task-list-title').innerText = `ファイル: ${file.title}`;
+    
+    // 初期状態では入力欄を空（任意設定の形）にする
+    document.getElementById('new-task-date').value = '';
+
+    renderTasks(file);
+}
+
+// 【タスク操作】追加
+function createNewTask() {
+    const file = appData.find(f => f.id === currentOpenFileId);
+    if (!file) return;
+
+    const titleInput = document.getElementById('new-task-title');
+    const memoInput = document.getElementById('new-task-memo');
+    const commentInput = document.getElementById('new-task-comment');
+    const dateInput = document.getElementById('new-task-date');
+
+    const title = titleInput.value.trim();
+    if (!title) return alert('やること（タイトル）は必須です');
+
+    const newTask = {
+        id: "task_" + Date.now(),
+        title: title,
+        memo: memoInput.value.trim() || 'メモなし',
+        comment: commentInput.value.trim() || '詳細コメントなし',
+        dueDate: dateInput.value || '', // 空白のままなら空文字として保存（オプショナル仕様）
+        isCompleted: false
+    };
+
+    file.tasks.push(newTask);
+    saveToStorage();
+
+    // フォームクリア
+    titleInput.value = '';
+    memoInput.value = '';
+    commentInput.value = '';
+    dateInput.value = '';
+
+    renderTasks(file);
+}
+
+// 【タスク操作】一覧表示
+function renderTasks(file) {
+    const container = document.getElementById('task-list');
+    container.innerHTML = '';
+
+    const activeTasks = file.tasks.filter(t => !t.isCompleted);
+
+    if (activeTasks.length === 0) {
+        container.innerHTML = '<p style="color:#999; text-align:center; margin-top:20px;">やるべき要素はありません。</p>';
+        return;
+    }
+
+    const now = new Date();
+
+    activeTasks.forEach(task => {
+        const item = document.createElement('div');
+        item.className = 'task-item';
+
+        // 期限が空文字か設定されているかで条件分岐を処理
+        let dateClass = 'task-date';
+        let dateLabel = '期限未設定';
+        
+        if (task.dueDate) {
+            const isOver = new Date(task.dueDate) < now;
+            dateClass = isOver ? 'task-date over' : 'task-date';
+            dateLabel = isOver ? `⚠️ 期限超過: ${task.dueDate.replace('T', ' ')}` : `期限: ${task.dueDate.replace('T', ' ')}`;
+        }
+
+        item.innerHTML = `
+            <div class="task-content">
+                <p class="task-main">${task.title}</p>
+                <p class="task-memo">■ ${task.memo}</p>
+                <p class="task-comment">${task.comment}</p>
+                <span class="${dateClass}">${dateLabel}</span>
+            </div>
+            <button class="check-btn" onclick="deleteOneTask('${task.id}')">✓</button>
+        `;
+        container.appendChild(item);
+    });
+}
+
+// 【タスク操作】ワンタップ一撃消去
+function deleteOneTask(taskId) {
+    const file = appData.find(f => f.id === currentOpenFileId);
+    if (!file) return;
+
+    const task = file.tasks.find(t => t.id === taskId);
+    if (task) {
+        task.isCompleted = true; 
+        saveToStorage();
+        renderTasks(file);
+    }
+}
+
+// ホームへ戻る
+function backToHome() {
+    currentOpenFileId = null;
+    document.getElementById('view-detail').classList.add('hidden');
+    document.getElementById('view-home').classList.remove('hidden');
+    renderHome();
+}
+
+// 起動
+renderHome();
+</script>
+</body>
+</html>
